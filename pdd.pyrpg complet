@@ -7,12 +7,13 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
+
 class Missao:
     def __init__(self, id, nome, descricao, tipo, alvo, quantidade, progresso, gold_recompensa, exp_recompensa):
         self.id = id
         self.nome = nome
         self.descricao = descricao
-        self.tipo = tipo 
+        self.tipo = tipo  
         self.alvo = alvo  
         self.quantidade = quantidade
         self.progresso = progresso
@@ -32,6 +33,17 @@ class Missao:
             "exp_recompensa": self.exp_recompensa
         }
 
+    @classmethod
+    def from_dict(cls, data):
+        if data is None:
+            return None
+        return cls(
+            data["id"], data["nome"], data["descricao"], data["tipo"], 
+            data["alvo"], data["quantidade"], data["progresso"], 
+            data["gold_recompensa"], data["exp_recompensa"]
+        )
+
+
 class Item:
     def __init__(self, nome, preco, descricao="Um item comum."):
         self.nome = nome
@@ -49,6 +61,13 @@ class Item:
             "descricao": self.descricao
         }
 
+    @classmethod
+    def from_dict(cls, data):
+        if data is None:
+            return None
+
+        return cls(data["nome"], data["preco"], data["descricao"])
+
 class Consumivel(Item):
     def __init__(self, nome, preco, descricao, efeito_pv=0, efeito_vigor=0, remove_condicao=None):
         super().__init__(nome, preco, descricao)
@@ -60,17 +79,17 @@ class Consumivel(Item):
         usado = False
         if self.efeito_pv > 0:
             alvo.vida = min(alvo.vida_max, alvo.vida + self.efeito_pv)
-            print(f"{Fore.GREEN}{alvo.nome} usou {self.nome} e recuperou {self.efeito_pv} PV. Vida atual: {alvo.vida}/{alvo.vida_max}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN} {alvo.nome} usou {self.nome} e recuperou {self.efeito_pv} PV. Vida atual: {alvo.vida}/{alvo.vida_max}{Style.RESET_ALL}")
             usado = True
         
         if self.efeito_vigor > 0:
             alvo.vigor = min(alvo.vigor_max, alvo.vigor + self.efeito_vigor)
-            print(f"{Fore.GREEN}{alvo.nome} usou {self.nome} e recuperou {self.efeito_vigor} Vigor. Vigor atual: {alvo.vigor}/{alvo.vigor_max}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN} {alvo.nome} usou {self.nome} e recuperou {self.efeito_vigor} Vigor. Vigor atual: {alvo.vigor}/{alvo.vigor_max}{Style.RESET_ALL}")
             usado = True
 
         if self.remove_condicao and self.remove_condicao in alvo.condicoes:
             del alvo.condicoes[self.remove_condicao]
-            print(f"{Fore.GREEN}{alvo.nome} usou {self.nome} e removeu a condição {self.remove_condicao}.{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}🩹 {alvo.nome} usou {self.nome} e removeu a condição {self.remove_condicao}.{Style.RESET_ALL}")
             usado = True
         
         return usado
@@ -83,6 +102,13 @@ class Consumivel(Item):
             "remove_condicao": self.remove_condicao
         })
         return data
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            data["nome"], data["preco"], data["descricao"], 
+            data["efeito_pv"], data["efeito_vigor"], data["remove_condicao"]
+        )
 
 class Equipamento(Item):
     def __init__(self, nome, preco, slot, bonus_ataque=0, bonus_defesa=0, bonus_velocidade=0, descricao="Um equipamento."):
@@ -102,17 +128,38 @@ class Equipamento(Item):
         })
         return data
 
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            data["nome"], data["preco"], data["slot"], 
+            data["bonus_ataque"], data["bonus_defesa"], data["bonus_velocidade"], 
+            data["descricao"]
+        )
+
 class Luva(Equipamento):
     def __init__(self, nome, preco, bonus_ataque, descricao="Luvas que aumentam o ataque."):
         super().__init__(nome, preco, "luva", bonus_ataque=bonus_ataque, descricao=descricao)
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data["nome"], data["preco"], data["bonus_ataque"], data["descricao"])
 
 class Quimono(Equipamento):
     def __init__(self, nome, preco, bonus_defesa, descricao="Quimono que aumenta a defesa."):
         super().__init__(nome, preco, "armadura", bonus_defesa=bonus_defesa, descricao=descricao)
 
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data["nome"], data["preco"], data["bonus_defesa"], data["descricao"])
+
 class Acessorio(Equipamento):
     def __init__(self, nome, preco, bonus_velocidade, descricao="Acessório que aumenta a velocidade."):
         super().__init__(nome, preco, "acessorio", bonus_velocidade=bonus_velocidade, descricao=descricao)
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data["nome"], data["preco"], data["bonus_velocidade"], data["descricao"])
+
 
 class Habilidade:
     def __init__(self, nome, custo_vigor, dano_base, descricao, nivel_habilidade=1):
@@ -143,6 +190,86 @@ class Habilidade:
             "descricao": self.descricao,
             "nivel_habilidade": self.nivel_habilidade
         }
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(
+            data["nome"], data["custo_vigor"], data["dano_base"], 
+            data["descricao"], data["nivel_habilidade"]
+        )
+
+CLASS_MAP = {
+    "Missao": Missao,
+    "Consumivel": Consumivel,
+    "Equipamento": Equipamento,
+    "Luva": Luva,
+    "Quimono": Quimono,
+    "Acessorio": Acessorio,
+    "Habilidade": Habilidade,
+}
+
+SAVE_FILE = "rpg_save_data.json"
+
+def save_game(heroi, config_data):
+    """Salva o estado do jogo (herói e configurações) em um arquivo JSON."""
+    try:
+        heroi_data = heroi.to_dict()
+        
+        full_data = {
+            "heroi": heroi_data,
+            "config": config_data
+        }
+        
+        with open(SAVE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(full_data, f, indent=4, ensure_ascii=False)
+        
+        print(f"\n{Fore.GREEN}*** Jogo salvo automaticamente em '{SAVE_FILE}'! ***{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED}ERRO ao salvar o jogo: {e}{Style.RESET_ALL}")
+
+def load_game():
+    """Carrega o estado do jogo a partir do arquivo JSON."""
+    if not os.path.exists(SAVE_FILE):
+        return None, None
+
+    try:
+        with open(SAVE_FILE, 'r', encoding='utf-8') as f:
+            full_data = json.load(f)
+        
+        config_data = full_data.get("config", {})
+        
+        heroi_data = full_data.get("heroi")
+        if heroi_data:
+            heroi = GuerreiroDoPunho.from_dict(heroi_data)
+        else:
+            heroi = None
+
+        print(f"\n{Fore.GREEN}*** Jogo carregado com sucesso de '{SAVE_FILE}'! ***{Style.RESET_ALL}")
+        return heroi, config_data
+    except Exception as e:
+        print(f"{Fore.RED}ERRO ao carregar o jogo: Arquivo corrompido ou formato inválido. Iniciando novo jogo. ({e}){Style.RESET_ALL}")
+        return None, None
+
+def deserialize_object(data):
+    """Função auxiliar para desserializar objetos com base na chave __class__."""
+    if data is None:
+        return None
+    
+    class_name = data.get("__class__")
+    if class_name in CLASS_MAP:
+        cls = CLASS_MAP[class_name]
+        if class_name in ["Luva", "Quimono", "Acessorio"]:
+            return cls.from_dict(data)
+        elif class_name == "Equipamento":
+            return cls.from_dict(data)
+        elif class_name == "Consumivel":
+            return cls.from_dict(data)
+        elif class_name == "Habilidade":
+            return cls.from_dict(data)
+        else:
+            return cls.from_dict(data)
+
+    return data
 
 class Personagem:
     def __init__(self, nome, vida, vigor_max, ataque, defesa, velocidade, nivel=1):
@@ -192,17 +319,17 @@ class Personagem:
             if isinstance(self, GuerreiroDoPunho):
                 if 'Atordoado' in alvo.condicoes:
                     self.karma = max(-100, self.karma - 5)
-                    print(f"{Fore.RED}{self.nome} atacou um alvo Atordoado. Karma reduzido para {self.karma}.{Style.RESET_ALL}")
+                    print(f"{Fore.RED} {self.nome} atacou um alvo Atordoado. Karma reduzido para {self.karma}.{Style.RESET_ALL}")
 
                 if self.talento == "Poder Focado":
                     dano_bruto += habilidade.dano_base * 0.1
 
-            print(f"{Fore.CYAN}{self.nome} usa {habilidade.nome}!{Style.RESET_ALL}")
+            print(f"{Fore.CYAN} {self.nome} usa {habilidade.nome}!{Style.RESET_ALL}")
         else:
             vigor_gerado = 5
             self.vigor = min(self.vigor_max, self.vigor + vigor_gerado)
             dano_bruto = self.get_ataque_total() * 0.75
-            print(f"{self.nome}Desfere um {Fore.GREEN}Ataque Básico{Style.RESET_ALL} e gera {vigor_gerado} Vigor.")
+            print(f" {self.nome} desfere um {Fore.GREEN}Ataque Básico{Style.RESET_ALL} e gera {vigor_gerado} Vigor.")
 
         dano_final = max(1, int(dano_bruto - (alvo.get_defesa_total() * 0.5)))
         alvo.receber_dano(dano_final, self)
@@ -221,20 +348,20 @@ class Personagem:
             if habilidade_contra and self.vigor >= habilidade_contra.custo_vigor and dano > 0 and random.random() < 0.5: 
                 self.vigor -= habilidade_contra.custo_vigor
                 dano_contra = habilidade_contra.dano_base + (self.get_ataque_total() * 0.75)
-                print(f"{Fore.YELLOW}{self.nome} REVIDA com Contra-Ataque!{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW} {self.nome} REVIDA com Contra-Ataque!{Style.RESET_ALL}")
                 atacante.receber_dano(int(dano_contra), self)
                 
         if not self.esta_vivo():
-            print(f"{Fore.RED}{self.nome} foi derrotado!{Style.RESET_ALL}")
+            print(f"{Fore.RED} {self.nome} foi derrotado!{Style.RESET_ALL}")
 
     def aplicar_condicao(self, condicao, duracao):
         if isinstance(self, GuerreiroDoPunho) and self.talento == "Mente Clara" and condicao in ["Sangramento", "Veneno", "Queimadura"]:
-            if random.random() < 0.5:
-                print(f"{Fore.CYAN}{self.nome} resistiu à condição {condicao} devido ao Talento Mente Clara!{Style.RESET_ALL}")
+            if random.random() < 0.5: 
+                print(f"{Fore.CYAN} {self.nome} resistiu à condição {condicao} devido ao Talento Mente Clara!{Style.RESET_ALL}")
                 return
 
         self.condicoes[condicao] = duracao
-        print(f"{Fore.YELLOW}{self.nome} agora está sob a condição: {condicao} por {duracao} turno(s).{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW} {self.nome} agora está sob a condição: {condicao} por {duracao} turno(s).{Style.RESET_ALL}")
 
     def processar_condicoes(self):
         condicoes_para_remover = []
@@ -256,290 +383,35 @@ class Personagem:
             elif condicao == 'Queimadura':
                 dano_queimadura = int(self.vida_max * 0.04)
                 self.vida -= dano_queimadura
-                print(f"{Fore.YELLOW} {self.nome} sofre dano de Queimadura: {dano_queimadura}. Vida restante: {self.vida}/{self.vida_max}{Style.RESET_ALL}")
+                print(f"{Fore.RED} {self.nome} sofre dano de Queimadura: {dano_queimadura}. Vida restante: {self.vida}/{self.vida_max}{Style.RESET_ALL}")
                 if not self.esta_vivo():
                     break
+            
+            elif condicao == 'Atordoado':
+                print(f"{Fore.YELLOW} {self.nome} está Atordoado e perde o turno.{Style.RESET_ALL}")
+            
+            elif condicao == 'Bloqueio de Guarda':
+                pass 
 
-            if condicao != 'Bloqueio de Guarda':
-                self.condicoes[condicao] -= 1
-                if self.condicoes[condicao] <= 0:
-                    condicoes_para_remover.append(condicao)
-            else:
+            self.condicoes[condicao] -= 1
+            if self.condicoes[condicao] <= 0:
                 condicoes_para_remover.append(condicao)
 
         for condicao in condicoes_para_remover:
-            if condicao in self.condicoes:
-                del self.condicoes[condicao]
-                print(f"{Fore.GREEN}A condição {condicao} em {self.nome} terminou.{Style.RESET_ALL}")
+            del self.condicoes[condicao]
+            print(f"{Fore.GREEN} Condição {condicao} removida de {self.nome}.{Style.RESET_ALL}")
 
     def recuperar_vigor_turno(self):
-        recuperacao = 10 
-        if isinstance(self, GuerreiroDoPunho) and self.subclasse == "Sombra Veloz" and self.nivel >= 3:
-            recuperacao += 5 
+        recuperacao = 10
+        if isinstance(self, GuerreiroDoPunho) and self.talento == "Vigor Incansável":
+            recuperacao += 5
         
         self.vigor = min(self.vigor_max, self.vigor + recuperacao)
-        print(f"{Fore.BLUE}{self.nome} recuperou {recuperacao} de Vigor. Vigor atual: {self.vigor}/{self.vigor_max}{Style.RESET_ALL}")
-
-MONSTRO_MODELOS = {
-    "Aprendiz": {
-        "nome": "Aprendiz do Dojo",
-        "nivel": 1,
-        "vida": 80,
-        "vigor": 40,
-        "ataque": 8,
-        "defesa": 4,
-        "velocidade": 8,
-        "gold_recompensa": 10,
-        "exp_recompensa": 40,
-        "tipo": "Aprendiz"
-    },
-    "Lutador": {
-        "nome": "Lutador Eliminatório",
-        "nivel": 3,
-        "vida": 120,
-        "vigor": 60,
-        "ataque": 15,
-        "defesa": 8,
-        "velocidade": 12,
-        "gold_recompensa": 25,
-        "exp_recompensa": 100,
-        "tipo": "Lutador"
-    },
-    "Mestre": {
-        "nome": "Mestre do Estilo",
-        "nivel": 5,
-        "vida": 200,
-        "vigor": 100,
-        "ataque": 25,
-        "defesa": 15,
-        "velocidade": 15,
-        "gold_recompensa": 50,
-        "exp_recompensa": 200,
-        "tipo": "Mestre"
-    },
-    "Desafiante": {
-        "nome": "Desafiante do Torneio",
-        "nivel": 7,
-        "vida": 300,
-        "vigor": 120,
-        "ataque": 35,
-        "defesa": 20,
-        "velocidade": 20,
-        "gold_recompensa": 80,
-        "exp_recompensa": 350,
-        "tipo": "Desafiante"
-    },
-    "Lenda": {
-        "nome": "Lenda do Punho",
-        "nivel": 10,
-        "vida": 500,
-        "vigor": 150,
-        "ataque": 50,
-        "defesa": 30,
-        "velocidade": 25,
-        "gold_recompensa": 150,
-        "exp_recompensa": 600,
-        "tipo": "Lenda"
-    }
-}
-
-class Monstro(Personagem):
-    def __init__(self, modelo_key):
-        modelo = MONSTRO_MODELOS[modelo_key]
-        super().__init__(
-            modelo["nome"],
-            modelo["vida"],
-            modelo["vigor"],
-            modelo["ataque"],
-            modelo["defesa"],
-            modelo["velocidade"],
-            modelo["nivel"]
-        )
-        self.tipo = modelo["tipo"]
-        self.gold_recompensa = modelo["gold_recompensa"]
-        self.exp_recompensa = modelo["exp_recompensa"]
-        self.habilidades.append(Habilidade("Chute Rápido", 10, 15, "Um chute rápido e preciso."))
-        
-        self.habilidades_condicao = []
-        if modelo_key == "Desafiante":
-            self.habilidades_condicao.append(("Golpe Venenoso", 20, 10, "Aplica Veneno (3 turnos).", "Veneno", 3))
-        elif modelo_key == "Lenda":
-            self.habilidades_condicao.append(("Punho Flamejante", 25, 20, "Aplica Queimadura (2 turnos).", "Queimadura", 2))
-
-
-    def acao_ia(self, heroi):
-        if self.habilidades_condicao and random.random() < 0.3:
-            nome, custo, dano, desc, condicao, duracao = self.habilidades_condicao[0]
-            
-            habilidade_cond = Habilidade(nome, custo, dano, desc)
-            
-            if self.vigor >= custo:
-                if self.atacar(heroi, habilidade_cond):
-                    heroi.aplicar_condicao(condicao, duracao)
-                    return
-
-        if self.habilidades and self.vigor >= self.habilidades[0].custo_vigor and random.random() < 0.7:
-            self.atacar(heroi, self.habilidades[0])
-            return
-
-        self.atacar(heroi) 
-
-class GuerreiroDoPunho(Personagem):
-    def __init__(self, nome, subclasse):
-        super().__init__(nome, 100, 50, 10, 5, 10)
-        self.subclasse = subclasse
-        self.experiencia = 0
-        self.exp_para_proximo_nivel = 100
-        self.talento = None
-        self.gold = 50 
-        self.inventario = []
-        self.equipamento = {"luva": None, "armadura": None, "acessorio": None} 
-        self.pontos_treinamento = 0 
-        self.missoes_completas = [] 
-        self.missao_ativa = None 
-        self.karma = 0 
-        
-        self.habilidades_classe = [
-            Habilidade("Jab Rápido", 0, 10, "Ataque Básico que gera 5 Vigor."),
-            Habilidade("Bloqueio de Guarda", 10, 0, "Ação Defensiva: Próximo ataque recebido tem Dano reduzido em 50%."),
-            Habilidade("Gancho Poderoso", 15, 30, "Dano alto. Chance de aplicar Atordoamento (1 turno)."),
-            Habilidade("Foco de Vigor", 0, 0, "Regenera 15 Vigor instantaneamente (1x por batalha)."),
-            Habilidade("Contra-Ataque", 20, 40, "Habilidade de Reação: Causa dano massivo após ser atacado (Requer 20 Vigor).")
-        ]
-        self.habilidades = self.habilidades_classe.copy()
-        self.usos_foco_vigor = 1
-        self.aplicar_subclasse_habilidades()
-
-    def get_ataque_total(self):
-        bonus_luva = self.equipamento["luva"].bonus_ataque if self.equipamento["luva"] else 0
-        return self.ataque_base + bonus_luva
-
-    def get_defesa_total(self):
-        bonus_armadura = self.equipamento["armadura"].bonus_defesa if self.equipamento["armadura"] else 0
-        return self.defesa_base + bonus_armadura
-    
-    def get_velocidade_total(self):
-        bonus_acessorio = self.equipamento["acessorio"].bonus_velocidade if self.equipamento["acessorio"] else 0
-        return self.velocidade_base + bonus_acessorio
-
-    def equipar_item(self, item):
-        if not isinstance(item, Equipamento):
-            print(f"{Fore.RED}Não é possível equipar {item.nome}.{Style.RESET_ALL}")
-            return False
-        
-        slot_antigo = self.equipamento[item.slot]
-        
-        if slot_antigo:
-            self.inventario.append(slot_antigo)
-            print(f"{Fore.YELLOW}Desequipado: {slot_antigo.nome} e devolvido ao inventário.{Style.RESET_ALL}")
-            
-        self.equipamento[item.slot] = item
-        self.inventario.remove(item)
-        print(f"{Fore.GREEN}Equipado: {item.nome} no slot {item.slot}.{Style.RESET_ALL}")
-        return True
-
-    def desequipar_item(self, slot):
-        item = self.equipamento.get(slot)
-        if item:
-            self.inventario.append(item)
-            self.equipamento[slot] = None
-            print(f"{Fore.YELLOW}Desequipado: {item.nome} e devolvido ao inventário.{Style.RESET_ALL}")
-            return True
-        else:
-            print(f"{Fore.RED}Nenhum item equipado no slot {slot}.{Style.RESET_ALL}")
-            return False
-
-    def usar_consumivel(self, indice):
-        if 0 <= indice < len(self.inventario):
-            item = self.inventario[indice]
-            if isinstance(item, Consumivel):
-                if item.usar(self):
-                    self.inventario.pop(indice)
-                    return True
-                else:
-                    print("Não foi possível usar o item (ex: vida/vigor já no máximo ou condição não presente).")
-                    return False
-            else:
-                print("O item escolhido não é um consumível.")
-                return False
-        return False
-
-    def aplicar_subclasse_habilidades(self):
-        if self.subclasse == "Sombra Veloz":
-            self.velocidade_base += 5
-            self.habilidades.append(Habilidade("Ataque Furtivo", 15, 25, "Dano moderado. Chance de aplicar Sangramento (2 turnos)."))
-            self.habilidades.append(Habilidade("Evasão Rápida", 10, 0, "Aumenta a velocidade em 10 por 2 turnos."))
-        elif self.subclasse == "Tanque de Ferro":
-            self.vida_max += 50
-            self.vida += 50
-            self.defesa_base += 10
-            self.habilidades.append(Habilidade("Soco no Corpo", 15, 20, "Dano moderado. Reduz o Vigor Máximo do alvo temporariamente."))
-            self.habilidades.append(Habilidade("Terremoto de Punho", 25, 35, "Dano alto. Chance de Atordoar o alvo (1 turno)."))
-
-    def ganhar_experiencia(self, exp):
-        self.experiencia += exp
-        print(f"{Fore.CYAN}Você ganhou {exp} EXP!{Style.RESET_ALL}")
-        while self.experiencia >= self.exp_para_proximo_nivel:
-            self.subir_nivel()
-
-    def subir_nivel(self):
-        self.nivel += 1
-        self.experiencia -= self.exp_para_proximo_nivel
-        self.exp_para_proximo_nivel = int(self.exp_para_proximo_nivel * 1.5)
-        self.pontos_treinamento += 3
-        
-        pv_bonus = 10
-        vigor_bonus = 5
-        pa_bonus = 3
-        vel_bonus = 2
-        
-        self.vida_max += pv_bonus
-        self.vida += pv_bonus 
-        self.vigor_max += vigor_bonus
-        self.ataque_base += pa_bonus
-        self.velocidade_base += vel_bonus
-        print(f"\n{Fore.GREEN}🎉 PARABÉNS! Você alcançou o Nível {self.nivel}!{Style.RESET_ALL}")
-        print(f"Atributos base aumentados: +{pv_bonus} PV Max, +{vigor_bonus} Vigor Max, +{pa_bonus} PA, +{vel_bonus} Velocidade.")
-        print(f"Você ganhou {Fore.CYAN}3 Pontos de Treinamento (PT){Style.RESET_ALL}!")
-
-        if self.nivel == 5:
-            self.habilidades_classe.append(Habilidade("Ataque Extra", 10, 0, "Permite usar o Ataque Básico duas vezes em um turno (custo de 10 Vigor por uso adicional)."))
-            self.habilidades.append(self.habilidades_classe[-1])
-            print(f"{Fore.CYAN}Habilidade de Classe 'Ataque Extra' desbloqueada!{Style.RESET_ALL}")
-
-        if self.nivel == 4 and not self.talento:
-            self.escolher_talento()
-
-        if self.nivel == 5:
-            if self.subclasse == "Sombra Veloz":
-                self.habilidades.append(Habilidade("Ataque Rasteiro", 25, 40, "Dano alto. Chance de Atordoar o alvo (1 turno)."))
-            elif self.subclasse == "Tanque de Ferro":
-                self.habilidades.append(Habilidade("Defesa Total", 20, 0, "Aumenta a Defesa em 50% por 2 turnos."))
-
-    def escolher_talento(self):
-        while True:
-            print(f"\n{Fore.YELLOW}--- ESCOLHA DE TALENTO (Nível 4) ---{Style.RESET_ALL}")
-            talentos = {
-                1: ("Poder Focado", "O Dano de todas as Habilidades que custam Vigor aumenta em 10%."),
-                2: ("Vigor Incansável", "O custo de Vigor de todas as Habilidades é reduzido em 10%."),
-                3: ("Mestre da Distância", "O alcance de ataque das Habilidades aumenta em 1 metro/unidade. (Bônus de acerto +5% no 1v1)"),
-                4: ("Mente Clara", "Aumenta a resistência a condições negativas (Sangramento, Veneno, Queimadura) em 50%.")
-            }
-            
-            for i, (nome, descricao) in talentos.items():
-                print(f"{i}. {nome}: {descricao}")
-            
-            escolha = input("Escolha o número do Talento: ")
-            
-            if escolha.isdigit() and int(escolha) in talentos:
-                self.talento = talentos[int(escolha)][0]
-                print(f"{Fore.GREEN}Talento {self.talento} escolhido!{Style.RESET_ALL}")
-                break
-            else:
-                print("Escolha inválida.")
+        print(f"{Fore.BLUE} {self.nome} recuperou {recuperacao} Vigor. Vigor atual: {self.vigor}/{self.vigor_max}{Style.RESET_ALL}")
 
     def to_dict(self):
         return {
+            "__class__": self.__class__.__name__,
             "nome": self.nome,
             "vida_max": self.vida_max,
             "vida": self.vida,
@@ -550,6 +422,154 @@ class GuerreiroDoPunho(Personagem):
             "velocidade_base": self.velocidade_base,
             "nivel": self.nivel,
             "condicoes": self.condicoes,
+            "habilidades": [h.to_dict() for h in self.habilidades]
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        instance = cls(
+            data["nome"], data["vida_max"], data["vigor_max"], 
+            data["ataque_base"], data["defesa_base"], data["velocidade_base"], 
+            data["nivel"]
+        )
+        instance.vida = data["vida"]
+        instance.vigor = data["vigor"]
+        instance.condicoes = data["condicoes"]
+        instance.habilidades = [deserialize_object(h_data) for h_data in data["habilidades"]]
+        return instance
+
+
+class GuerreiroDoPunho(Personagem):
+    def __init__(self, nome, subclasse, nivel=1):
+        stats = {
+            "Mestre do Punho": {"vida": 120, "vigor": 100, "ataque": 20, "defesa": 15, "velocidade": 15},
+            "Tanque de Ferro": {"vida": 150, "vigor": 80, "ataque": 15, "defesa": 25, "velocidade": 10},
+            "Vento Veloz": {"vida": 100, "vigor": 120, "ataque": 18, "defesa": 10, "velocidade": 25}
+        }
+        
+        base = stats.get(subclasse, stats["Mestre do Punho"])
+        
+        super().__init__(nome, base["vida"], base["vigor"], base["ataque"], base["defesa"], base["velocidade"], nivel)
+        
+        self.subclasse = subclasse
+        self.experiencia = 0
+        self.exp_para_proximo_nivel = 100
+        self.talento = None
+        self.gold = 0
+        self.pontos_treinamento = 0
+        self.missoes_completas = []
+        self.missao_ativa = None
+        self.karma = 0 
+        self.usos_foco_vigor = 1 
+        
+        self.inventario = []
+        self.equipamento = {"luva": None, "armadura": None, "acessorio": None}
+        
+        self.habilidades.append(Habilidade("Jab Rápido", 0, 10, "Ataque rápido que não custa vigor."))
+        self.habilidades.append(Habilidade("Contra-Ataque", 20, 40, "Habilidade de Reação: Causa dano massivo após ser atacado (Requer 20 Vigor)."))
+        
+        if subclasse == "Mestre do Punho":
+            self.habilidades.append(Habilidade("Gancho Poderoso", 30, 30, "Alto dano, 30% de chance de Atordoar (1 turno)."))
+        elif subclasse == "Tanque de Ferro":
+            self.habilidades.append(Habilidade("Bloqueio de Guarda", 15, 0, "Reduz o próximo dano recebido pela metade (Ação de 1 turno)."))
+        elif subclasse == "Vento Veloz":
+            self.habilidades.append(Habilidade("Soco no Corpo", 20, 20, "Dano moderado, reduz o Vigor Máximo do alvo em 5."))
+
+    def get_ataque_total(self):
+        bonus = sum(item.bonus_ataque for item in self.equipamento.values() if item)
+        return self.ataque_base + bonus
+
+    def get_defesa_total(self):
+        bonus = sum(item.bonus_defesa for item in self.equipamento.values() if item)
+        return self.defesa_base + bonus
+
+    def get_velocidade_total(self):
+        bonus = sum(item.bonus_velocidade for item in self.equipamento.values() if item)
+        return self.velocidade_base + bonus
+
+    def ganhar_experiencia(self, exp):
+        self.experiencia += exp
+        print(f"{Fore.CYAN}Você ganhou {exp} de Experiência!{Style.RESET_ALL}")
+        
+        while self.experiencia >= self.exp_para_proximo_nivel:
+            self.nivel += 1
+            self.experiencia -= self.exp_para_proximo_nivel
+            self.exp_para_proximo_nivel = int(self.exp_para_proximo_nivel * 1.5)
+            self.vida_max += 10
+            self.vida = self.vida_max
+            self.vigor_max += 5
+            self.vigor = self.vigor_max
+            self.ataque_base += 2
+            self.defesa_base += 2
+            self.velocidade_base += 2
+            self.pontos_treinamento += 3
+            print(f"\n{Fore.YELLOW}*** PARABÉNS! VOCÊ SUBIU PARA O NÍVEL {self.nivel}! ***{Style.RESET_ALL}")
+            print(f"Você ganhou 3 Pontos de Treinamento!")
+            
+            save_game(self, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
+
+    def equipar_item(self, item):
+        if item.slot in self.equipamento:
+            if self.equipamento[item.slot]:
+                self.inventario.append(self.equipamento[item.slot])
+            self.equipamento[item.slot] = item
+            self.inventario.remove(item)
+            print(f"{Fore.GREEN} {item.nome} equipado no slot {item.slot.capitalize()}.{Style.RESET_ALL}")
+            return True
+        return False
+
+    def desequipar_item(self, slot):
+        if slot in self.equipamento and self.equipamento[slot]:
+            item = self.equipamento[slot]
+            self.inventario.append(item)
+            self.equipamento[slot] = None
+            print(f"{Fore.YELLOW} {item.nome} desequipado do slot {slot.capitalize()}.{Style.RESET_ALL}")
+            return True
+        return False
+
+    def usar_consumivel(self, indice):
+        if 0 <= indice < len(self.inventario):
+            item = self.inventario[indice]
+            if isinstance(item, Consumivel):
+                if item.usar(self):
+                    self.inventario.pop(indice)
+                    if not hasattr(self, 'venceu'): 
+                        save_game(self, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
+                    return True
+                else:
+                    print(f"{Fore.RED}Não foi possível usar {item.nome} (sem efeito ou condição não presente).{Style.RESET_ALL}")
+                    return False
+            else:
+                print(f"{Fore.RED} {item.nome} não é um item consumível.{Style.RESET_ALL}")
+                return False
+        return False
+
+    def escolher_talento(self):
+        talentos = {
+            1: ("Poder Focado", "Aumenta o dano de habilidades em 10%."),
+            2: ("Vigor Incansável", "Reduz o custo de vigor das habilidades em 10% e aumenta a recuperação de vigor por turno em 5."),
+            3: ("Mente Clara", "50% de chance de resistir a condições negativas (Sangramento, Veneno, Queimadura).")
+        }
+        
+        while True:
+            print(f"\n{Fore.YELLOW}--- ESCOLHA DE TALENTO ---{Style.RESET_ALL}")
+            for i, (nome, descricao) in talentos.items():
+                print(f"{i}. {nome}: {descricao}")
+            
+            escolha = input("Escolha o número do Talento: ")
+            
+            if escolha.isdigit() and int(escolha) in talentos:
+                self.talento = talentos[int(escolha)][0]
+                print(f"{Fore.GREEN}Talento {self.talento} escolhido!{Style.RESET_ALL}")
+                save_game(self, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
+                break
+            else:
+                print("Escolha inválida.")
+
+    def to_dict(self):
+        data = super().to_dict()
+        data.update({
+            "__class__": self.__class__.__name__,
             "subclasse": self.subclasse,
             "experiencia": self.experiencia,
             "exp_para_proximo_nivel": self.exp_para_proximo_nivel,
@@ -562,36 +582,132 @@ class GuerreiroDoPunho(Personagem):
             "usos_foco_vigor": self.usos_foco_vigor,
             "inventario": [item.to_dict() for item in self.inventario],
             "equipamento": {slot: item.to_dict() if item else None for slot, item in self.equipamento.items()},
-            "habilidades": [h.to_dict() for h in self.habilidades]
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data):
+        instance = cls(data["nome"], data["subclasse"], data["nivel"])
+        
+        instance.vida_max = data["vida_max"]
+        instance.vida = data["vida"]
+        instance.vigor_max = data["vigor_max"]
+        instance.vigor = data["vigor"]
+        instance.ataque_base = data["ataque_base"]
+        instance.defesa_base = data["defesa_base"]
+        instance.velocidade_base = data["velocidade_base"]
+        instance.condicoes = data["condicoes"]
+        
+        instance.experiencia = data["experiencia"]
+        instance.exp_para_proximo_nivel = data["exp_para_proximo_nivel"]
+        instance.talento = data["talento"]
+        instance.gold = data["gold"]
+        instance.pontos_treinamento = data["pontos_treinamento"]
+        instance.missoes_completas = data["missoes_completas"]
+        instance.missao_ativa = Missao.from_dict(data["missao_ativa"])
+        instance.karma = data["karma"]
+        instance.usos_foco_vigor = data["usos_foco_vigor"]
+
+        instance.inventario = [deserialize_object(item_data) for item_data in data["inventario"]]
+        instance.equipamento = {
+            slot: deserialize_object(item_data) 
+            for slot, item_data in data["equipamento"].items()
         }
 
-def iniciar_combate(heroi, monstro):
+        instance.habilidades = [deserialize_object(h_data) for h_data in data["habilidades"]]
+        
+        return instance
+
+
+class OponenteIA(GuerreiroDoPunho):
+    def __init__(self, modelo_key):
+        modelo = OPONENTE_MODELOS[modelo_key]
+
+        super().__init__(modelo["nome"], modelo["subclasse"]) 
+        
+        self.nivel = modelo["nivel"]
+        self.vida_max = modelo["vida"]
+        self.vida = modelo["vida"]
+        self.vigor_max = modelo["vigor"]
+        self.vigor = modelo["vigor"]
+        self.ataque_base = modelo["ataque"]
+        self.defesa_base = modelo["defesa"]
+        self.velocidade_base = modelo["velocidade"]
+        self.talento = modelo["talento"]
+
+        self.tipo = modelo["tipo"]
+        self.gold_recompensa = modelo["gold_recompensa"]
+        self.exp_recompensa = modelo["exp_recompensa"]
+
+        self.habilidades = [h for h in self.habilidades if h.nome not in ["Jab Rápido", "Contra-Ataque"]]
+        self.habilidades.append(Habilidade("Contra-Ataque", 20, 40, "Habilidade de Reação: Causa dano massivo após ser atacado (Requer 20 Vigor)."))
+
+        if modelo_key == "Desafiante":
+            self.habilidades.append(Habilidade("Golpe Venenoso", 20, 10, "Aplica Veneno (3 turnos)."))
+        elif modelo_key == "Lenda":
+            self.habilidades.append(Habilidade("Punho Flamejante", 25, 20, "Aplica Queimadura (2 turnos)."))
+
+        for _ in range(1, self.nivel):
+            self.vida_max += 10
+            self.vida = self.vida_max
+            self.vigor_max += 5
+            self.vigor = self.vigor_max
+            self.ataque_base += 2
+            self.defesa_base += 2
+            self.velocidade_base += 2
+
+
+    def acao_ia(self, heroi):
+        
+        habilidades_controle = [h for h in self.habilidades if h.nome in ["Gancho Poderoso", "Terremoto de Punho"] and self.vigor >= h.custo_vigor]
+        if habilidades_controle and random.random() < 0.4 and "Atordoado" not in heroi.condicoes:
+            h = random.choice(habilidades_controle)
+            if self.atacar(heroi, h):
+                heroi.aplicar_condicao("Atordoado", 1)
+                return
+
+        habilidades_dano = [h for h in self.habilidades if h.dano_base > 20 and self.vigor >= h.custo_vigor]
+        if habilidades_dano and random.random() < 0.6:
+            self.atacar(heroi, random.choice(habilidades_dano))
+            return
+
+        if self.subclasse == "Tanque de Ferro" and self.vida > self.vida_max * 0.7 and "Bloqueio de Guarda" not in self.condicoes:
+            bloqueio = next((h for h in self.habilidades if h.nome == "Bloqueio de Guarda"), None)
+            if bloqueio and self.vigor >= bloqueio.custo_vigor:
+                self.aplicar_condicao("Bloqueio de Guarda", 1)
+                self.vigor -= bloqueio.custo_vigor
+                print(f"{Fore.BLUE}🛡️ {self.nome} assume Postura de Bloqueio de Guarda.{Style.RESET_ALL}")
+                return
+
+        self.atacar(heroi)
+
+def iniciar_combate(heroi, oponente):
     print(f"\n{Fore.RED}--- COMBATE INICIADO! ---{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}{heroi.nome} (Nível {heroi.nivel}){Style.RESET_ALL} vs {Fore.RED}{monstro.nome} (Nível {monstro.nivel}){Style.RESET_ALL}")
+    print(f"{Fore.GREEN}{heroi.nome} (Nível {heroi.nivel}){Style.RESET_ALL} vs {Fore.RED}{oponente.nome} (Nível {oponente.nivel}){Style.RESET_ALL}")
     time.sleep(1)
 
     turno = 1
     heroi.usos_foco_vigor = 1 
-    
+
     heroi_velocidade = heroi.get_velocidade_total()
     if heroi.karma < -50:
         heroi_velocidade = max(1, heroi_velocidade - 5)
         print(f"{Fore.RED}A hostilidade ao seu redor reduz sua velocidade de combate!{Style.RESET_ALL}")
 
-    if heroi_velocidade >= monstro.get_velocidade_total():
+    if heroi_velocidade >= oponente.get_velocidade_total():
         primeiro = heroi
-        segundo = monstro
+        segundo = oponente
     else:
-        primeiro = monstro
+        primeiro = oponente
         segundo = heroi
 
-    while heroi.esta_vivo() and monstro.esta_vivo():
+    while heroi.esta_vivo() and oponente.esta_vivo():
         print(f"\n{Fore.YELLOW}==== TURNO {turno} ===={Style.RESET_ALL}")
-        
+
         primeiro.processar_condicoes()
         segundo.processar_condicoes()
         
-        if not heroi.esta_vivo() or not monstro.esta_vivo():
+        if not heroi.esta_vivo() or not oponente.esta_vivo():
             break
 
         primeiro.recuperar_vigor_turno()
@@ -599,16 +715,16 @@ def iniciar_combate(heroi, monstro):
 
         if primeiro.esta_vivo():
             if primeiro == heroi:
-                menu_combate(heroi, monstro)
+                menu_combate(heroi, oponente)
             else:
                 primeiro.acao_ia(heroi)
         
-        if not heroi.esta_vivo() or not monstro.esta_vivo():
+        if not heroi.esta_vivo() or not oponente.esta_vivo():
             break
 
         if segundo.esta_vivo():
             if segundo == heroi:
-                menu_combate(heroi, monstro)
+                menu_combate(heroi, oponente)
             else:
                 segundo.acao_ia(heroi)
 
@@ -619,25 +735,25 @@ def iniciar_combate(heroi, monstro):
     
     if heroi.venceu:
         print(f"\n{Fore.GREEN}VITÓRIA!{Style.RESET_ALL}")
-        gold_ganho = monstro.gold_recompensa
-        exp_ganha = monstro.exp_recompensa
-        
+        gold_ganho = oponente.gold_recompensa
+        exp_ganha = oponente.exp_recompensa
+
         if heroi.karma > 50:
             bonus = int(gold_ganho * 0.25)
             gold_ganho += bonus
             print(f"{Fore.YELLOW}Sua reputação lhe rendeu um bônus de {bonus} Gold!{Style.RESET_ALL}")
 
         heroi.gold += gold_ganho
-        heroi.ganhar_experiencia(exp_ganha)
-        
-        if heroi.missao_ativa and heroi.missao_ativa.tipo == "derrotar_monstro" and heroi.missao_ativa.alvo == monstro.tipo:
+        heroi.ganhar_experiencia(exp_ganha) 
+
+        if heroi.missao_ativa and heroi.missao_ativa.tipo == "derrotar_monstro" and heroi.missao_ativa.alvo == oponente.tipo:
             heroi.missao_ativa.progresso += 1
             print(f"{Fore.CYAN}Progresso da Missão: {heroi.missao_ativa.progresso}/{heroi.missao_ativa.quantidade}{Style.RESET_ALL}")
         
         print(f"Você ganhou {Fore.YELLOW}{gold_ganho} Gold{Style.RESET_ALL} e {Fore.CYAN}{exp_ganha} EXP{Style.RESET_ALL}!")
-        
-        if monstro.vida <= 0:
-            print(f"\n{Fore.YELLOW}O corpo de {monstro.nome} jaz no chão. O que você faz?{Style.RESET_ALL}")
+
+        if oponente.vida <= 0:
+            print(f"\n{Fore.YELLOW}O corpo de {oponente.nome} jaz no chão. O que você faz?{Style.RESET_ALL}")
             print("1. Ignorar e seguir em frente.")
             print("2. Prestar os primeiros socorros (Aumenta Karma).")
             
@@ -646,56 +762,61 @@ def iniciar_combate(heroi, monstro):
                 heroi.karma = min(100, heroi.karma + 5)
                 print(f"{Fore.GREEN}Você demonstrou piedade. Karma aumentado para {heroi.karma}.{Style.RESET_ALL}")
 
+        if not heroi.experiencia >= heroi.exp_para_proximo_nivel:
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
+
         return True 
     else:
         print(f"\n{Fore.RED}DERROTA!{Style.RESET_ALL}")
-        exp_ganha = int(monstro.exp_recompensa * 0.5)
-        heroi.ganhar_experiencia(exp_ganha)
-        print(f"Você ganhou {Fore.CYAN}{exp_ganha} EXP{Style.RESET_ALL} de consolação.")
+        save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
         return False
 
 def iniciar_torneio(heroi):
+    
     if heroi.nivel < 5:
         print(f"{Fore.RED}Você deve ser no mínimo Nível 5 para entrar no Torneio do Punho Ascendente!{Style.RESET_ALL}")
         return False
-    
+
     missao_torneio = heroi.missao_ativa and heroi.missao_ativa.id == "TORNEIO"
     
     if missao_torneio:
         print(f"{Fore.YELLOW}Iniciando o Torneio, objetivo da Missão Principal!{Style.RESET_ALL}")
 
     print(f"\n{Fore.MAGENTA}*** TORNEIO DO PUNHO ASCENDENTE INICIADO! ***{Style.RESET_ALL}")
+
     oponentes = ["Lutador", "Mestre", "Desafiante", "Lenda"]
     vitorias = 0
     
     for nome_oponente in oponentes:
-        monstro = Monstro(nome_oponente)
-        print(f"\n{Fore.YELLOW}--- PRÓXIMO OPONENTE: {monstro.nome} ---{Style.RESET_ALL}")
+        oponente = OponenteIA(nome_oponente)
+        print(f"\n{Fore.YELLOW}--- PRÓXIMO OPONENTE: {oponente.nome} ({oponente.subclasse}) ---{Style.RESET_ALL}")
         time.sleep(1)
         
-        if not iniciar_combate(heroi, monstro):
-            print(f"{Fore.RED}Você foi derrotado por {monstro.nome} e eliminado do Torneio!{Style.RESET_ALL}")
+        if not iniciar_combate(heroi, oponente):
+            print(f"{Fore.RED}Você foi derrotado por {oponente.nome} e eliminado do Torneio!{Style.RESET_ALL}")
             return False
         
         vitorias += 1
-        print(f"\n{Fore.GREEN}Vitória contra {monstro.nome}! Prepare-se para o próximo round.{Style.RESET_ALL}")
+        print(f"\n{Fore.GREEN}Vitória contra {oponente.nome}! Prepare-se para o próximo round.{Style.RESET_ALL}")
         heroi.vida = heroi.vida_max 
         heroi.vigor = heroi.vigor_max
         heroi.usos_foco_vigor = 1
         input("Pressione ENTER para continuar para o próximo round...")
 
     print(f"\n{Fore.YELLOW}*** PARABÉNS! VOCÊ É O CAMPEÃO DO TORNEIO DO PUNHO ASCENDENTE! ***{Style.RESET_ALL}")
-    
+
     gold_premio = 500
     exp_premio = 1000
     
     heroi.gold += gold_premio
     heroi.ganhar_experiencia(exp_premio)
-    
+
     item_unico = Luva("Punho do Destino", 1000, 25, "Luvas lendárias. +25 Ataque. Não pode ser vendido.")
     heroi.inventario.append(item_unico)
     
     print(f"{Fore.YELLOW}Recompensa: {gold_premio} Gold, {exp_premio} EXP e o item lendário '{item_unico.nome}'!{Style.RESET_ALL}")
+
+    save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
     
     return True
 
@@ -738,7 +859,7 @@ def menu_habilidades(heroi, alvo):
             custo_final = int(h.custo_vigor * 0.9)
 
         if heroi.vigor >= custo_final:
-            print(f"{i+1}. {h.nome} (Nível {h.nivel_habilidade} | Custo: {Fore.BLUE}{custo_final} Vigor{Style.RESET_ALL}) - {h.descricao}")
+            print(f"{i+1}. {h.nome} (Nível {h.nivel_habilidade}/{h.max_nivel} | Custo: {Fore.BLUE}{custo_final} Vigor{Style.RESET_ALL}) - {h.descricao}")
         else:
             print(f"{i+1}. {h.nome} (Nível {h.nivel_habilidade} | {Fore.RED}Vigor Insuficiente - Custo: {custo_final}{Style.RESET_ALL})")
     
@@ -783,7 +904,7 @@ def menu_habilidades(heroi, alvo):
                 if heroi.atacar(alvo, habilidade_escolhida):
                     alvo.vigor_max = max(10, alvo.vigor_max - 5) 
                     alvo.vigor = min(alvo.vigor, alvo.vigor_max)
-                    print(f"{Fore.YELLOW} Vigor Máximo de {alvo.nome} reduzido para {alvo.vigor_max}.{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}Vigor Máximo de {alvo.nome} reduzido para {alvo.vigor_max}.{Style.RESET_ALL}")
                     return True
                 return False
 
@@ -853,123 +974,171 @@ def mostrar_status(heroi):
         karma_status = "Bom"
         karma_cor = Fore.GREEN
     elif heroi.karma < -50:
-        karma_status = "Mau"
+        karma_status = "Ruim"
         karma_cor = Fore.RED
-    print(f"Karma: {karma_cor}{heroi.karma} ({karma_status}){Style.RESET_ALL}")
-
-    print(f"Vida: {Fore.RED}{heroi.vida}/{heroi.vida_max}{Style.RESET_ALL}")
-    print(f"Vigor: {Fore.BLUE}{heroi.vigor}/{heroi.vigor_max}{Style.RESET_ALL}")
-    print(f"Ataque Total: {heroi.get_ataque_total()} (Base: {heroi.ataque_base})")
-    print(f"Defesa Total: {heroi.get_defesa_total()} (Base: {heroi.defesa_base})")
-    print(f"Velocidade: {heroi.get_velocidade_total()} (Base: {heroi.velocidade_base})")
-    print(f"Talento: {heroi.talento if heroi.talento else 'Nenhum'}")
-    print(f"Condições: {', '.join(heroi.condicoes.keys()) if heroi.condicoes else 'Nenhuma'}")
-    print("\n--- EQUIPAMENTOS ---")
-    print(f"Luva: {heroi.equipamento['luva'].nome if heroi.equipamento['luva'] else 'Nenhuma'}")
-    print(f"Armadura: {heroi.equipamento['armadura'].nome if heroi.equipamento['armadura'] else 'Nenhuma'}")
-    print(f"Acessório: {heroi.equipamento['acessorio'].nome if heroi.equipamento['acessorio'] else 'Nenhuma'}")
-    print("-------------------------")
+        
+    print(f"Karma: {karma_cor}{karma_status} ({heroi.karma}){Style.RESET_ALL}")
+    
+    print(f"\nAtributos Base:")
+    print(f"  PV Máximo: {heroi.vida_max}")
+    print(f"  Vigor Máximo: {heroi.vigor_max}")
+    print(f"  Ataque Base: {heroi.ataque_base}")
+    print(f"  Defesa Base: {heroi.defesa_base}")
+    print(f"  Velocidade Base: {heroi.velocidade_base}")
+    
+    print(f"\nAtributos Totais:")
+    print(f"  Ataque Total: {heroi.get_ataque_total()}")
+    print(f"  Defesa Total: {heroi.get_defesa_total()}")
+    print(f"  Velocidade Total: {heroi.get_velocidade_total()}")
+    
+    print(f"\nTalento: {Fore.MAGENTA}{heroi.talento if heroi.talento else 'Nenhum'}{Style.RESET_ALL}")
+    
+    print(f"\nEquipamento:")
+    for slot, item in heroi.equipamento.items():
+        print(f"  {slot.capitalize()}: {item.nome if item else 'Vazio'}")
+        
+    print(f"\nHabilidades:")
+    for h in heroi.habilidades:
+        print(f"  - {h}")
+        
+    print(f"\nMissão Ativa:")
+    if heroi.missao_ativa:
+        print(f"  ID: {heroi.missao_ativa.id}")
+        print(f"  Nome: {heroi.missao_ativa.nome}")
+        print(f"  Progresso: {heroi.missao_ativa.progresso}/{heroi.missao_ativa.quantidade}")
+    else:
+        print("  Nenhuma")
+        
+    print(f"\nMissões Completas: {', '.join(heroi.missoes_completas) if heroi.missoes_completas else 'Nenhuma'}")
+    
+    input("\nPressione ENTER para continuar...")
 
 def menu_inventario(heroi):
     while True:
-        print(f"\n{Fore.GREEN}--- INVENTÁRIO ({len(heroi.inventario)} itens) ---{Style.RESET_ALL}")
-        print(f"Gold: {Fore.YELLOW}{heroi.gold}{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}--- INVENTÁRIO ---{Style.RESET_ALL}")
         
-        itens_equipaveis = [item for item in heroi.inventario if isinstance(item, Equipamento)]
-        itens_consumiveis = [item for item in heroi.inventario if isinstance(item, Consumivel)]
-        
-        itens_exibicao = itens_equipaveis + itens_consumiveis
-        
-        if not itens_exibicao:
-            print("Seu inventário está vazio.")
-        
-        for i, item in enumerate(itens_exibicao):
-            tipo = type(item).__name__
-            status_equipado = ""
-            if item in heroi.equipamento.values():
-                status_equipado = f" ({Fore.RED}EQUIPADO{Style.RESET_ALL})"
-            print(f"{i+1}. {item.nome} ({tipo}){status_equipado} - {item.descricao}")
+        if not heroi.inventario:
+            print("O inventário está vazio.")
+            input("Pressione ENTER para continuar...")
+            break
+            
+        print("Itens:")
+        for i, item in enumerate(heroi.inventario):
+            print(f"{i+1}. {item}")
             
         print("\nOpções:")
-        print("1. Usar Consumível")
-        print("2. Equipar Equipamento")
-        print("3. Desequipar Equipamento")
+        print("E. Equipar Item")
+        print("D. Desequipar Item")
+        print("U. Usar Consumível")
         print("0. Voltar ao Menu Principal")
         
-        escolha = input("Escolha a opção: ")
+        escolha = input("Escolha uma opção (E/D/U/0) ou o número do item para inspecionar: ").upper()
         
         if escolha == '0':
             break
         
-        elif escolha == '1':
-            if not itens_consumiveis:
-                print(f"{Fore.RED}Nenhum item consumível no inventário.{Style.RESET_ALL}")
+        elif escolha == 'E':
+            if not any(isinstance(item, Equipamento) for item in heroi.inventario):
+                print(f"{Fore.RED}Nenhum equipamento no inventário para equipar.{Style.RESET_ALL}")
                 continue
-            
-            print(f"\n{Fore.YELLOW}--- USAR CONSUMÍVEL ---{Style.RESET_ALL}")
-            for i, item in enumerate(itens_consumiveis):
-                print(f"{i+1}. {item.nome} - {item.descricao}")
-            
-            sub_escolha = input("Digite o número do item para usar (0 para voltar): ")
-            if sub_escolha == '0': continue
-            
-            if sub_escolha.isdigit() and 1 <= int(sub_escolha) <= len(itens_consumiveis):
-                item_escolhido = itens_consumiveis[int(sub_escolha) - 1]
-                indice_real = heroi.inventario.index(item_escolhido)
-                heroi.usar_consumivel(indice_real)
-            else:
-                print("Escolha inválida.")
                 
-        elif escolha == '2':
-            if not itens_equipaveis:
-                print(f"{Fore.RED}Nenhum item equipável no inventário.{Style.RESET_ALL}")
+            while True:
+                try:
+                    num = input("Digite o número do item para EQUIPAR (0 para cancelar): ")
+                    if num == '0':
+                        break
+                    num = int(num)
+                    if 1 <= num <= len(heroi.inventario):
+                        item = heroi.inventario[num - 1]
+                        if isinstance(item, Equipamento):
+                            heroi.equipar_item(item)
+                            break
+                        else:
+                            print(f"{Fore.RED}O item {item.nome} não é um equipamento.{Style.RESET_ALL}")
+                    else:
+                        print("Número inválido.")
+                except ValueError:
+                    print("Entrada inválida.")
+        
+        elif escolha == 'D':
+            if not any(item for item in heroi.equipamento.values()):
+                print(f"{Fore.RED}Nenhum item equipado para desequipar.{Style.RESET_ALL}")
                 continue
-            
-            print(f"\n{Fore.YELLOW}--- EQUIPAR EQUIPAMENTO ---{Style.RESET_ALL}")
-            for i, item in enumerate(itens_equipaveis):
-                print(f"{i+1}. {item.nome} ({item.slot}) - {item.descricao}")
-            
-            sub_escolha = input("Digite o número do item para equipar (0 para voltar): ")
-            if sub_escolha == '0': continue
-            
-            if sub_escolha.isdigit() and 1 <= int(sub_escolha) <= len(itens_equipaveis):
-                item_escolhido = itens_equipaveis[int(sub_escolha) - 1]
-                heroi.equipar_item(item_escolhido)
-            else:
-                print("Escolha inválida.")
-
-        elif escolha == '3':
-            print(f"\n{Fore.YELLOW}--- DESEQUIPAR EQUIPAMENTO ---{Style.RESET_ALL}")
-            slots_equipados = [s for s, item in heroi.equipamento.items() if item]
-            
-            if not slots_equipados:
-                print("Nenhum equipamento para desequipar.")
-                continue
-
+                
+            print("\nSlots Equipados:")
+            slots_equipados = [slot for slot, item in heroi.equipamento.items() if item]
             for i, slot in enumerate(slots_equipados):
-                print(f"{i+1}. {heroi.equipamento[slot].nome} (Slot: {slot})")
-            
-            sub_escolha = input("Digite o número do item para desequipar (0 para voltar): ")
-            if sub_escolha == '0': continue
-            
-            if sub_escolha.isdigit() and 1 <= int(sub_escolha) <= len(slots_equipados):
-                slot_escolhido = slots_equipados[int(sub_escolha) - 1]
-                heroi.desequipar_item(slot_escolhido)
-            else:
-                print("Escolha inválida.")
+                print(f"{i+1}. {slot.capitalize()} ({heroi.equipamento[slot].nome})")
+                
+            while True:
+                try:
+                    num = input("Digite o número do slot para DESEQUIPAR (0 para cancelar): ")
+                    if num == '0':
+                        break
+                    num = int(num)
+                    if 1 <= num <= len(slots_equipados):
+                        slot_escolhido = slots_equipados[num - 1]
+                        heroi.desequipar_item(slot_escolhido)
+                        break
+                    else:
+                        print("Número inválido.")
+                except ValueError:
+                    print("Entrada inválida.")
 
-def menu_melhoria_personagem(heroi):
+        elif escolha == 'U':
+            if not any(isinstance(item, Consumivel) for item in heroi.inventario):
+                print(f"{Fore.RED}Nenhum consumível no inventário para usar.{Style.RESET_ALL}")
+                continue
+                
+            while True:
+                try:
+                    num = input("Digite o número do item para USAR (0 para cancelar): ")
+                    if num == '0':
+                        break
+                    num = int(num)
+                    if 1 <= num <= len(heroi.inventario):
+                        indice_real = num - 1
+                        if isinstance(heroi.inventario[indice_real], Consumivel):
+                            heroi.usar_consumivel(indice_real)
+                            break
+                        else:
+                            print(f"{Fore.RED}O item {heroi.inventario[indice_real].nome} não é um consumível.{Style.RESET_ALL}")
+                    else:
+                        print("Número inválido.")
+                except ValueError:
+                    print("Entrada inválida.")
+        
+        elif escolha.isdigit() and 1 <= int(escolha) <= len(heroi.inventario):
+            item = heroi.inventario[int(escolha) - 1]
+            print(f"\nDetalhes do Item: {item.nome}")
+            print(f"  Descrição: {item.descricao}")
+            print(f"  Preço de Compra: {item.preco} Gold")
+            if isinstance(item, Equipamento):
+                print(f"  Slot: {item.slot.capitalize()}")
+                print(f"  Bônus Ataque: {item.bonus_ataque}")
+                print(f"  Bônus Defesa: {item.bonus_defesa}")
+                print(f"  Bônus Velocidade: {item.bonus_velocidade}")
+            elif isinstance(item, Consumivel):
+                print(f"  Efeito PV: {item.efeito_pv}")
+                print(f"  Efeito Vigor: {item.efeito_vigor}")
+                print(f"  Remove Condição: {item.remove_condicao if item.remove_condicao else 'Nenhuma'}")
+            input("Pressione ENTER para continuar...")
+            
+        else:
+            print("Opção inválida.")
+
+def menu_treinamento(heroi):
     while True:
-        print(f"\n{Fore.YELLOW}--- TREINAMENTO E EVOLUÇÃO ---{Style.RESET_ALL}")
-        print(f"Pontos de Treinamento (PT): {Fore.CYAN}{heroi.pontos_treinamento}{Style.RESET_ALL}")
-        print("\nOpções:")
-        print("1. Aumentar Atributo Base (1 PT)")
-        print("2. Aumentar Nível de Habilidade (2 PT)")
+        print(f"\n{Fore.YELLOW}--- TREINAMENTO ---{Style.RESET_ALL}")
+        print(f"Pontos de Treinamento (PTs): {Fore.CYAN}{heroi.pontos_treinamento}{Style.RESET_ALL}")
+        print("1. Aumentar Atributo Base (+5 por 1 PT)")
+        print("2. Melhorar Habilidade (Aumenta Nível por 2 PTs)")
         print("0. Voltar ao Menu Principal")
         
         escolha = input("Escolha a opção: ")
         
         if escolha == '0':
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
             break
         
         elif escolha == '1':
@@ -1031,10 +1200,10 @@ def menu_dojo(heroi):
         print(f"\n{Fore.YELLOW}--- DOJO DE TREINAMENTO ---{Style.RESET_ALL}")
         print("Escolha o oponente para treinar:")
         
-        opcoes = list(MONSTRO_MODELOS.keys())
+        opcoes = list(OPONENTE_MODELOS.keys())
         for i, nome in enumerate(opcoes):
-            modelo = MONSTRO_MODELOS[nome]
-            print(f"{i+1}. {nome} (Nível {modelo['nivel']}) - Recompensa: {modelo['exp_recompensa']} EXP / {modelo['gold_recompensa']} Gold")
+            modelo = OPONENTE_MODELOS[nome]
+            print(f"{i+1}. {nome} (Nível {modelo['nivel']} | {modelo['subclasse']}) - Recompensa: {modelo['exp_recompensa']} EXP / {modelo['gold_recompensa']} Gold")
             
         print("0. Voltar ao Menu Principal")
         
@@ -1044,9 +1213,9 @@ def menu_dojo(heroi):
             break
         
         if escolha.isdigit() and 1 <= int(escolha) <= len(opcoes):
-            nome_monstro = opcoes[int(escolha) - 1]
-            monstro = Monstro(nome_monstro)
-            iniciar_combate(heroi, monstro)
+            nome_oponente = opcoes[int(escolha) - 1]
+            oponente = OponenteIA(nome_oponente)
+            iniciar_combate(heroi, oponente)
         else:
             print("Opção inválida.")
 
@@ -1071,6 +1240,7 @@ def loja_consumiveis(heroi):
         escolha = input("Digite o número do item para comprar (0 para voltar): ")
         
         if escolha == '0':
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
             break
         
         if escolha.isdigit() and 1 <= int(escolha) <= len(itens_loja):
@@ -1114,6 +1284,7 @@ def vender_item(heroi):
         escolha = input("Digite o número do item para vender (0 para voltar): ")
         
         if escolha == '0':
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
             break
         
         if escolha.isdigit() and 1 <= int(escolha) <= len(itens_vendaveis):
@@ -1153,6 +1324,7 @@ def loja_equipamentos(heroi):
         escolha = input("Digite o número do item para comprar (0 para voltar): ")
         
         if escolha == '0':
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
             break
         
         if escolha.isdigit() and 1 <= int(escolha) <= len(itens_loja):
@@ -1190,19 +1362,19 @@ def menu_lojas(heroi):
 
 def menu_jogo(heroi):
     print("\n" + Fore.YELLOW + "="*50)
-    print(f"🗺️ CIDADE DE KAIRU - DOJO CENTRAL")
+    print(f" CIDADE DE KAIRU - DOJO CENTRAL")
     print("="*50 + Style.RESET_ALL)
 
     if not heroi.missao_ativa and "TORNEIO" not in heroi.missoes_completas:
         heroi.missao_ativa = Missao("TORNEIO", "Conquistar o título de Mestre Invicto no Torneio do Punho Ascendente.", "vencer_torneio", "Torneio", 1, 0, 500, 1000)
-    
+
     if "TORNEIO" in heroi.missoes_completas and "DERROTAR_MESTRES" not in heroi.missoes_completas and not heroi.missao_ativa:
         heroi.missao_ativa = Missao("DERROTAR_MESTRES", "Derrote 3 Mestres para receber uma recompensa especial.", "derrotar_monstro", "Mestre", 3, 0, 150, 300)
 
     while heroi.esta_vivo():
-        
+
         if heroi.missao_ativa and heroi.missao_ativa.progresso >= heroi.missao_ativa.quantidade:
-            print(f"\n{Fore.YELLOW} MISSÃO COMPLETA: {heroi.missao_ativa.nome}!{Style.RESET_ALL}")
+            print(f"\n{Fore.YELLOW}🏆 MISSÃO COMPLETA: {heroi.missao_ativa.nome}!{Style.RESET_ALL}")
             heroi.gold += heroi.missao_ativa.gold_recompensa
             heroi.ganhar_experiencia(heroi.missao_ativa.exp_recompensa)
             heroi.missoes_completas.append(heroi.missao_ativa.id)
@@ -1212,231 +1384,138 @@ def menu_jogo(heroi):
         if random.random() < 0.1: 
             print(f"\n{Fore.YELLOW}Um jovem monge se aproxima de você no Dojo.{Style.RESET_ALL}")
             print("Ele lhe pergunta: 'Qual é o caminho mais rápido para a vitória?'")
-            print("1. 'O caminho mais rápido é o mais brutal. Não hesite em usar todos os meios.' (Karma -10)")
-            print("2. 'A verdadeira vitória está na honra e no respeito ao oponente.' (Karma +10)")
+            print("1. O caminho da força bruta.")
+            print("2. O caminho da defesa inabalável.")
+            print("3. O caminho da velocidade e agilidade.")
             
-            escolha = input("Opção: ")
-            if escolha == '1':
-                heroi.karma = max(-100, heroi.karma - 10)
-                print(f"{Fore.RED}Seu Karma foi reduzido para {heroi.karma}.{Style.RESET_ALL}")
-            elif escolha == '2':
-                heroi.karma = min(100, heroi.karma + 10)
-                print(f"{Fore.GREEN}Seu Karma foi aumentado para {heroi.karma}.{Style.RESET_ALL}")
-            input("Pressione ENTER para continuar...")
+            escolha_karma = input("Sua resposta (1/2/3): ")
+            if escolha_karma == '1':
+                heroi.karma = max(-100, heroi.karma - 5)
+                print(f"{Fore.RED}O monge se afasta com um olhar de desaprovação. Karma: {heroi.karma}{Style.RESET_ALL}")
+            elif escolha_karma == '2' or escolha_karma == '3':
+                heroi.karma = min(100, heroi.karma + 5)
+                print(f"{Fore.GREEN}O monge sorri e se curva em respeito. Karma: {heroi.karma}{Style.RESET_ALL}")
+            
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
 
-
-        print("\nO que você deseja fazer?")
-        print("1. Dojo de Treinamento (Escolher Oponente)")
-        print(f"{Fore.MAGENTA}2. Torneio do Punho Ascendente (Desafio Final){Style.RESET_ALL}")
-        print(f"3. Treinamento e Evolução ({Fore.CYAN}{heroi.pontos_treinamento} PTs disponíveis{Style.RESET_ALL})")
-        print("4. Gerenciar Inventário e Equipamentos")
-        print("5. Lojas (Consumíveis e Equipamentos)")
-        print("6. Curandeiro (Restaurar PV/Vigor)")
-        print("7. Ver Status")
-        print(f"{Fore.GREEN}8. Salvar Jogo{Style.RESET_ALL}")
-        print("9. Sair do Jogo")
+        print(f"\n{Fore.CYAN}--- MENU PRINCIPAL ---{Style.RESET_ALL}")
+        print(f"PV: {Fore.RED}{heroi.vida}/{heroi.vida_max}{Style.RESET_ALL} | Vigor: {Fore.BLUE}{heroi.vigor}/{heroi.vigor_max}{Style.RESET_ALL} | Gold: {Fore.YELLOW}{heroi.gold}{Style.RESET_ALL}")
+        print(f"Nível: {heroi.nivel} | EXP: {heroi.experiencia}/{heroi.exp_para_proximo_nivel}")
         
-        if heroi.missao_ativa:
-            print(f"{Fore.CYAN}QUEST ATIVA: {heroi.missao_ativa.nome} - {heroi.missao_ativa.descricao}{Style.RESET_ALL}")
-            if heroi.missao_ativa.tipo == "derrotar_monstro":
-                print(f"{Fore.CYAN}Progresso: {heroi.missao_ativa.progresso}/{heroi.missao_ativa.quantidade} {heroi.missao_ativa.alvo} derrotados.{Style.RESET_ALL}")
-            elif heroi.missao_ativa.tipo == "vencer_torneio":
-                status = "COMPLETA" if "TORNEIO" in heroi.missoes_completas else "PENDENTE"
-                print(f"{Fore.CYAN}Status: {status}{Style.RESET_ALL}")
+        print("\nOpções:")
+        print("1. Status do Herói")
+        print("2. Inventário e Equipamento")
+        print("3. Treinamento (Usar PTs)")
+        print("4. Dojo (Combate)")
+        print("5. Lojas de Kairu")
+        print("6. Torneio do Punho Ascendente")
+        print("7. Salvar Jogo")
+        print("0. Sair do Jogo")
         
-        escolha = input("Opção: ")
-
+        escolha = input("Escolha a opção: ")
+        
         if escolha == '1':
-            menu_dojo(heroi)
-        
+            mostrar_status(heroi)
         elif escolha == '2':
-            venceu_torneio = iniciar_torneio(heroi)
-            if venceu_torneio and "TORNEIO" not in heroi.missoes_completas:
-                heroi.missoes_completas.append("TORNEIO")
-                print(f"\n{Fore.YELLOW}🏆 MISSÃO PRINCIPAL CONCLUÍDA!{Style.RESET_ALL}")
-                input("Pressione ENTER para continuar...")
-        
-        elif escolha == '3':
-            menu_melhoria_personagem(heroi)
-        
-        elif escolha == '4':
             menu_inventario(heroi)
-        
+        elif escolha == '3':
+            menu_treinamento(heroi)
+        elif escolha == '4':
+            menu_dojo(heroi)
         elif escolha == '5':
             menu_lojas(heroi)
-
         elif escolha == '6':
-            heroi.vida = heroi.vida_max
-            heroi.vigor = heroi.vigor_max
-            heroi.usos_foco_vigor = 1 
-            print(f"{Fore.GREEN} Vigor e Vida totalmente restaurados!{Style.RESET_ALL}")
-        
+            iniciar_torneio(heroi)
         elif escolha == '7':
-            mostrar_status(heroi)
-
-        elif escolha == '8':
-            salvar_jogo(heroi)
-            continue
-
-        elif escolha == '9':
-            print("Saindo do Jogo.")
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
+        elif escolha == '0':
+            print(f"\n{Fore.YELLOW}Salvando e saindo...{Style.RESET_ALL}")
+            save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
             break
-        
         else:
             print("Opção inválida.")
 
-def introducao_jogo():
-    print("\n" + Fore.YELLOW + "="*70)
-    print("           O PUNHO DO DESTINO: O RPG DE TURNO EM KAIRU")
-    print("="*70 + Style.RESET_ALL)
-    time.sleep(1)
+    print(f"\n{Fore.RED}FIM DE JOGO!{Style.RESET_ALL}")
 
-    print(f"\n{Fore.CYAN}BEM-VINDO A KAIRU.{Style.RESET_ALL}")
-    print("Uma cidade portuária vibrante, onde o ar é carregado com o cheiro de incenso, suor e a promessa de glória. Kairu é o centro do Vigor, a energia vital que flui através de todos os seres.")
-    time.sleep(2)
-    
-    print("Você é Kai, o último discípulo do Dojo da Montanha, destruído por um ataque traiçoeiro. As últimas palavras do seu Mestre ecoam em sua mente:")
-    print(f"{Fore.MAGENTA}>> 'O Vigor não é apenas força, Kai. É a escolha de como usá-lo. Seu punho pode ser o do destino, mas o destino é seu para moldar.'{Style.RESET_ALL}")
-    time.sleep(3)
-    
-    print("Seu objetivo é claro: Treinar no Dojo Central, provar seu valor e, finalmente, conquistar o título de Mestre Invicto no lendário **Torneio do Punho Ascendente**.")
-    print("Somente o campeão tem o direito de empunhar o **Punho do Destino** e restaurar a honra do seu Mestre.")
-    time.sleep(3)
-    
-    print(f"\n{Fore.GREEN}Sua jornada começa agora. Que seu Vigor o guie.{Style.RESET_ALL}")
-    input("\nPressione ENTER para iniciar o jogo...")
+OPONENTE_MODELOS = {
+    "Lutador": {
+        "nome": "Lutador", "subclasse": "Mestre do Punho", "nivel": 1, 
+        "vida": 100, "vigor": 80, "ataque": 15, "defesa": 10, "velocidade": 10,
+        "talento": "Poder Focado", "tipo": "Lutador", "gold_recompensa": 20, "exp_recompensa": 50
+    },
+    "Mestre": {
+        "nome": "Mestre", "subclasse": "Vento Veloz", "nivel": 3, 
+        "vida": 150, "vigor": 100, "ataque": 25, "defesa": 15, "velocidade": 20,
+        "talento": "Vigor Incansável", "tipo": "Mestre", "gold_recompensa": 50, "exp_recompensa": 150
+    },
+    "Desafiante": {
+        "nome": "Desafiante", "subclasse": "Tanque de Ferro", "nivel": 5, 
+        "vida": 200, "vigor": 120, "ataque": 30, "defesa": 30, "velocidade": 15,
+        "talento": "Mente Clara", "tipo": "Desafiante", "gold_recompensa": 100, "exp_recompensa": 300
+    },
+    "Lenda": {
+        "nome": "Lenda", "subclasse": "Mestre do Punho", "nivel": 7, 
+        "vida": 250, "vigor": 150, "ataque": 40, "defesa": 35, "velocidade": 25,
+        "talento": "Poder Focado", "tipo": "Lenda", "gold_recompensa": 200, "exp_recompensa": 500
+    }
+}
 
-def reconstruct_item(item_data):
-    if not item_data:
-        return None
-    
-    item_class_name = item_data.pop("__class__")
-    
-    if item_class_name == "Consumivel":
-        return Consumivel(**item_data)
-    elif item_class_name == "Luva":
-        item_data["slot"] = "luva"
-        return Luva(item_data["nome"], item_data["preco"], item_data["bonus_ataque"], item_data["descricao"])
-    elif item_class_name == "Quimono":
-        item_data["slot"] = "armadura"
-        return Quimono(item_data["nome"], item_data["preco"], item_data["bonus_defesa"], item_data["descricao"])
-    elif item_class_name == "Acessorio":
-        item_data["slot"] = "acessorio"
-        return Acessorio(item_data["nome"], item_data["preco"], item_data["bonus_velocidade"], item_data["descricao"])
-    elif item_class_name == "Equipamento":
-        return Equipamento(**item_data)
-    elif item_class_name == "Item":
-        return Item(**item_data)
-    return None
+MISSOES_DISPONIVEIS = [
+    Missao("CAÇA_LUTADORES", "Derrote 5 Lutadores no Dojo.", "derrotar_monstro", "Lutador", "Lutador", 5, 0, 50, 100),
+    Missao("CAÇA_MESTRES", "Derrote 3 Mestres no Dojo.", "derrotar_monstro", "Mestre", "Mestre", 3, 0, 100, 250),
+    Missao("CAÇA_DESAFIANTES", "Derrote 2 Desafiantes no Dojo.", "derrotar_monstro", "Desafiante", "Desafiante", 2, 0, 150, 400)
+]
 
-def reconstruct_habilidade(h_data):
-    return Habilidade(h_data["nome"], h_data["custo_vigor"], h_data["dano_base"], h_data["descricao"], h_data["nivel_habilidade"])
+ITENS_LOJA = [
+    Consumivel("Poção de PV Pequena", 10, "Restaura 50 Pontos de Vida.", efeito_pv=50),
+    Consumivel("Elixir de Vigor Pequeno", 15, "Restaura 30 Pontos de Vigor.", efeito_vigor=30),
+    Luva("Luvas de Couro Reforçado", 50, 8, "Aumenta o ataque."),
+    Quimono("Quimono de Treino Avançado", 60, 5, "Aumenta a defesa."),
+    Acessorio("Peso Corporal Leve", 40, 2, "Aumenta a velocidade.")
+]
 
-
-def reconstruir_heroi(data):
-    heroi = GuerreiroDoPunho(data["nome"], data["subclasse"])
-    
-    heroi.vida_max = data["vida_max"]
-    heroi.vida = data["vida"]
-    heroi.vigor_max = data["vigor_max"]
-    heroi.vigor = data["vigor"]
-    heroi.ataque_base = data["ataque_base"]
-    heroi.defesa_base = data["defesa_base"]
-    heroi.velocidade_base = data["velocidade_base"]
-    heroi.nivel = data["nivel"]
-    heroi.condicoes = data["condicoes"]
-    heroi.experiencia = data["experiencia"]
-    heroi.exp_para_proximo_nivel = data["exp_para_proximo_nivel"]
-    heroi.talento = data["talento"]
-    heroi.gold = data["gold"]
-    heroi.pontos_treinamento = data.get("pontos_treinamento", 0)
-    heroi.usos_foco_vigor = data.get("usos_foco_vigor", 1)
-    heroi.missoes_completas = data.get("missoes_completas", [])
-    heroi.karma = data.get("karma", 0) 
-
-    missao_data = data.get("missao_ativa")
-    if missao_data:
-        heroi.missao_ativa = Missao(missao_data["id"], missao_data["nome"], missao_data["descricao"], missao_data["tipo"], missao_data["alvo"], missao_data["quantidade"], missao_data["progresso"], missao_data["gold_recompensa"], missao_data["exp_recompensa"])
-    else:
-        heroi.missao_ativa = None
-
-    heroi.inventario = [reconstruct_item(item_data) for item_data in data["inventario"]]
-
-    heroi.equipamento = {}
-    for slot, item_data in data["equipamento"].items():
-        heroi.equipamento[slot] = reconstruct_item(item_data)
-
-    heroi.habilidades = [reconstruct_habilidade(h_data) for h_data in data["habilidades"]]
-    
-    return heroi
-
-def salvar_jogo(heroi):
-    try:
-        with open("save_game.json", "w", encoding="utf-8") as f:
-            json.dump(heroi.to_dict(), f, indent=4, ensure_ascii=False)
-        print(f"{Fore.GREEN} Jogo salvo com sucesso em 'save_game.json'!{Style.RESET_ALL}")
-    except Exception as e:
-        print(f"{Fore.RED} Erro ao salvar o jogo: {e}{Style.RESET_ALL}")
-
-def carregar_jogo():
-    try:
-        with open("save_game.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
-        
-        heroi = reconstruir_heroi(data)
-        print(f"{Fore.GREEN} Jogo carregado com sucesso! Bem-vindo de volta, {heroi.nome}.{Style.RESET_ALL}")
-        return heroi
-    except FileNotFoundError:
-        print(f"{Fore.YELLOW}Nenhum arquivo de save encontrado. Iniciando novo jogo.{Style.RESET_ALL}")
-        return None
-    except Exception as e:
-        print(f"{Fore.RED} Erro ao carregar o jogo: {e}{Style.RESET_ALL}")
-        return None
-
-def criar_personagem():
+def criar_novo_heroi():
     print(f"\n{Fore.YELLOW}--- CRIAÇÃO DE PERSONAGEM ---{Style.RESET_ALL}")
-    nome = input("Digite o nome do seu Guerreiro do Punho: ")
+    nome = input("Digite o nome do seu Herói: ")
+    
+    subclasses = {
+        1: "Mestre do Punho",
+        2: "Tanque de Ferro",
+        3: "Vento Veloz"
+    }
     
     while True:
         print("\nEscolha sua Subclasse:")
-        print("1. Sombra Veloz (Foco em Velocidade e Dano Rápido)")
-        print("2. Tanque de Ferro (Foco em Vida e Defesa)")
-        escolha = input("Opção: ")
+        print("1. Mestre do Punho (Equilibrado, Foco em Dano)")
+        print("2. Tanque de Ferro (Alto PV/Defesa, Foco em Sobrevivência)")
+        print("3. Vento Veloz (Alto Vigor/Velocidade, Foco em Agilidade)")
         
-        if escolha == '1':
-            subclasse = "Sombra Veloz"
-            break
-        elif escolha == '2':
-            subclasse = "Tanque de Ferro"
+        escolha = input("Opção: ")
+        if escolha.isdigit() and int(escolha) in subclasses:
+            subclasse = subclasses[int(escolha)]
             break
         else:
-            print("Opção inválida.")
+            print("Escolha inválida.")
             
     heroi = GuerreiroDoPunho(nome, subclasse)
-    print(f"\n{Fore.GREEN}Seu Guerreiro do Punho, {heroi.nome} ({heroi.subclasse}), está pronto para a jornada!{Style.RESET_ALL}")
+    heroi.escolher_talento()
+    
+    save_game(heroi, {"OPONENTE_MODELOS": OPONENTE_MODELOS, "MISSOES_DISPONIVEIS": MISSOES_DISPONIVEIS, "ITENS_LOJA": ITENS_LOJA})
+    
     return heroi
 
-def menu_inicial():
-    while True:
-        print(f"\n{Fore.YELLOW}--- O PUNHO DO DESTINO ---{Style.RESET_ALL}")
-        print("1. Novo Jogo")
-        print("2. Carregar Jogo")
-        print("3. Sair")
+def main():
+    print(f"{Fore.CYAN}*** RPG DO GUERREIRO DO PUNHO ***{Style.RESET_ALL}")
+    
+    heroi, config_data = load_game()
+    
+    if heroi:
+        print(f"\nBem-vindo de volta, {heroi.nome}!")
+    else:
+        print("\nNenhum jogo salvo encontrado. Iniciando novo jogo.")
+        heroi = criar_novo_heroi()
         
-        escolha = input("Opção: ")
-        
-        if escolha == '1':
-            heroi = criar_personagem()
-            menu_jogo(heroi)
-        elif escolha == '2':
-            heroi = carregar_jogo()
-            if heroi:
-                menu_jogo(heroi)
-        elif escolha == '3':
-            sys.exit()
-        else:
-            print("Opção inválida.")
+    menu_jogo(heroi)
 
 if __name__ == "__main__":
-    introducao_jogo()
-    menu_inicial()
+    main()
